@@ -1,9 +1,9 @@
-# BotBridge Wire Protocol — v2
+# BotBridge Wire Protocol — v2.1
 
-**Transport:** TCP on `127.0.0.1:3444`  
+**Transport:** TCP on `127.0.0.1:3444` (defined as `#define BRIDGE_HOST "127.0.0.1"` and `#define BRIDGE_PORT 3444` in `src/game/SuperUiBots/AiBotAIMain.h`)  
 **Encoding:** UTF-8, newline-delimited JSON (one JSON object per `\n`)  
 **Direction:** C++ (AiBotAI) is the TCP CLIENT → C# (BotBridgeService) is the TCP SERVER  
-**Last audited:** AiBotAI.cpp, BotBridgeService.cs, BotBridgeHub.cs
+**Last audited:** AiBotAIBridge.cpp (C++), BotBridgeService.cs / BotBridgeHub.cs (C#), AiBotAIMain.cpp (C++ UpdateAI loop including BG-ACCEPT / BG-LEAVE), BridgeContracts.cs (C# payload DTOs)
 
 ---
 
@@ -120,6 +120,10 @@ Discrete events. The `event` field determines which additional payload fields ar
 | `RESPAWN` | Self-revive completes | (none) | `BridgeSendEvent()` |
 | `NPC_INTERACT` | INTERACT_NPC reaches the NPC (≤10yd) | `data` = creature name | `BridgeSendEvent()` |
 | `QUEST_FAILED` | Quest command validation fails | `data` = reason string | `BridgeSendEvent()` |
+| `PARTY_JOIN` | Real-player group invite accepted | (none) | `BridgeSendEvent()` |
+| `BG_INVITE` | BG invite packet received; bot will accept next tick via `SendBattlefieldPortPacket()` | (none) | `BridgeSendEvent()` |
+| `BG_ENDED` | Bot exits BG instance (after teleport from BG system) | (none) | `BridgeSendEvent()` |
+| `GEAR_UP_RESULT` | `BridgeHandleGearUp()` completes successfully | `data` = summary string (`"level=60, spec learned, gear equipped, skills maxed, riding=yes, mount_item=8630"`) | `BridgeSendEvent()` |
 
 **KILL example:**
 ```json
@@ -234,7 +238,83 @@ Keepalive — no-op on C++ side.
 {"type":"PING","payload":{}}
 ```
 
+### Phase 2.5 — Implemented and Shipped
+
+#### GEAR_UP
+
+One-shot bot prep: set level, learn premade spec template (class spells + talents), auto-equip, max all skills to level, teach riding (Apprentice 33388 + Journeyman 33391 at level ≥ 60), optionally give a mount item via `AddItemToInventory`.
+
+Wire shape mirrors the C++ handler in `AiBotAIBridge.cpp::BridgeHandleGearUp`:
+
+```json
+{
+  "type": "GEAR_UP",
+  "payload": {
+    "level": 60,
+    "mount_item": 8630,
+    "riding": 1
+  }
+}
+```
+
+All fields default (`level=60`, `mount_item=8630` default = "Reins of the Black War Tiger", `riding=1` teaches both riding skills). Set `riding=0` to skip the riding spells.
+
+> **Encoding note:** `riding` is sent as int 0/1 because the C++ bridge handler reads via `atoi()` (a JSON `true` atoi's to 0). Same goes for `level` and `mount_item` — all ints.
+
+**C++ behavior:**
+1. `GiveLevel(level)` + `InitTalentForLevel()` + zero out XP
+2. `UpdateSkillsToMaxSkillsForLevel()` — depends on the new level
+3. `LearnPremadeSpecForClass()` — applies level/class spell package + talents (falls back to `LearnRandomTalents()` + `LearnAllTrainerCommand` + `LearnAllItemsCommand` if no template matches)
+4. `LearnSpell(33388)` (Apprentice Riding) + `LearnSpell(33391)` at level ≥ 60 (Journeyman) — only when `riding=1`
+5. `SetCharacterFlag(CHARACTER_FLAG_MOUNT_UPGRADED, true)` — unlocks 100% speed modifier on 60% mounts
+6. `AutoAssignRole()` + `AutoEquipGear(BATTLE_BOT_AUTO_EQUIP)` — fills inventory with premade gear
+7. `ResetSpellData()` + `PopulateSpellData()` + `AddAllSpellReagents()` — rebuilds the bot's internal spell reference list (must run AFTER every `LearnSpell` call)
+8. `AddItemToInventory(mount_item, 1)` — if `mount_item > 0`, drop the mount item into inventory
+9. `SetHealthPercent(100)` + `SetPowerPercent(...)` + `SaveToDB()` — persist
+
+**Ordering rationale:** `UpdateSkillsToMaxSkillsForLevel` runs early so weapon/armor cap to the right value while the spell map is small. `ResetSpellData` + `PopulateSpellData` runs LAST so it picks up every spell learned during the prep (including the riding skills).
+
+**Side effects:**
+- Bot level set unconditionally (not gated by current level)
+- Bot doctrine reset to Solo via `RefreshDoctrine()` (see also: BG leave)
+- All equipped gear replaced with the configured premade set
+- Mount item (if any) auto-equips from inventory next tick via `AutoEquipGear`
+
+**No new STATE fields** — gear score, training spells, mount state all already covered by existing fields. The bot's `STATE` packet will reflect the new level + spells on the next tick after the command.
+
+#### BG_JOIN — Planned (not yet implemented)
+
+Auto-queue the bot into a Battleground (so the user doesn't have to click the Battlemaster NPC in the WoW client).
+
+Wire shape (proposed):
+```json
+{
+  "type": "BG_JOIN",
+  "payload": { "bg_type": 2 }
+}
+```
+
+`bg_type` values: `1` = AV, `2` = WSG, `3` = AB.
+
+**C++ behavior (planned):**
+1. Same path BattleBotAI uses internally: `ChatHandler(me->GetSession()).HandleGoWarsongCommand("")` (or the appropriate `HandleGoXxxCommand` per `bg_type`)
+2. The bot's session sends `CMSG_BATTLEMASTER_JOIN` to the queue manager
+3. Group queue: if the bot is in a real player's group, all group members get queued together
+4. Match found → bot receives `SMSG_BATTLEFIELD_STATUS` invite → BG-ACCEPT path (`m_receivedBgInvite` flag, `SendBattlefieldPortPacket()`) handles entry
+5. Match ends → BG-LEAVE path (`m_wasInBG` transition + `OnLeaveBattleGround()` override) handles cleanup
+
+**UI button:** "Queue BG" should sit alongside the existing "Gear up" card in the bot control suite (between "Grouping" and "Diagnostics").
+
+**Brain integration:** when a real player is the group leader and the doctrine resolves to `PlayerParty`, the brain can auto-issue `BG_JOIN` for the leader's preferred BG.
+
+**End-to-end test (after implementation):** Azure (player) in WoW client right-clicks the BG battlemaster once. Bots auto-queue. When a match fires, all bots port in. When it ends, all bots resume normal AI.
+
+---
+
 ### Phase 2.5 — Implemented, Testing In Progress
+
+
+
 
 #### ACCEPT_QUEST
 
@@ -328,6 +408,9 @@ Keepalive — no-op on C++ side.
 
 ### Phase 3 — Planned, Need C++ Handlers
 
+> **What's already wired in (not in this list, but worth noting):**
+> - BG auto-accept and BG leave: `CONFIG_BOOL_AI_BOT_AUTO_ACCEPT_BG` config + `m_receivedBgInvite` flag + `m_wasInBG` transition + `OnLeaveBattleGround()` override. These fire from `AiBotAI::UpdateAI()` automatically — no bridge command needed. Bot ends a BG match back in normal solo/party mode ready for the next event. See `docs/BG-ACCEPT-FIX.md` for full details.
+
 #### High Priority (blocking domain functionality)
 
 | Command | Payload | What It Would Do | Needed By |
@@ -340,6 +423,7 @@ Keepalive — no-op on C++ side.
 | `BUY_ITEM` | `item_id`, `count`, `vendor_guid` | Buy from vendor | EconomyDomain |
 | `LOOT_CORPSE` | `corpse_guid` | Loot a killed creature's corpse | CombatDomain → EconomyDomain |
 | `WHISPER` | `target_name`, `text` | `me->Whisper()` to a player | SocialDomain, Ollama chat |
+| `BG_JOIN` | `bg_type` (1=AV, 2=WSG, 3=AB) | Queue the bot for the named BG via `ChatHandler(me->GetSession()).HandleGoXxxCommand(args)` | BG end-to-end (so user doesn't have to click Battlemaster) |
 
 #### Medium Priority
 
