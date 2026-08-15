@@ -3186,6 +3186,21 @@ $(function () {
         }
         html += bcCard('fa-users', 'Grouping', grp, 'grouping mode must not be Off');
 
+        // --- gear up ---------------------------------------------------------------
+        // One-shot prep: level to target, learn premade spec (class spells + talents),
+        // auto-equip, max skills, teach riding (Apprentice 33388 + Journeyman 33391 at 60+),
+        // optional mount item via AddItemToInventory. Same call the bridge C++ side
+        // implements (AiBotAIBridge.cpp::BridgeHandleGearUp).
+        var gu = '<div class="bc-row">' +
+            bcNum('bcGearLvl', 'level', 60, 78) +
+            bcNum('bcGearMount', 'mount item', 0, 100) +
+            '<label class="bc-radio" style="margin-left:8px;"><input type="checkbox" id="bcGearRiding" checked> riding</label>' +
+            '</div><div class="bc-row">' +
+            bcBtn('bcGearUp', 'fa-shield-halved', 'Gear up', 'primary') +
+            bcBtn('bcGearUpAll', 'fa-users-gear', 'Gear up all', '') +
+            '</div><div class="bc-row"><span class="bc-lbl" id="bcGearUpState">—</span></div>';
+        html += bcCard('fa-shield-halved', 'Gear up', gu, 'GEAR_UP — level, spells, gear, riding. mount_item=0 = skip');
+
         // --- diagnostics ---------------------------------------------------------------
         var dg = '<div class="bc-row">' +
             bcBtn('bcTraceOn', 'fa-record-vinyl', 'Trace on') + bcBtn('bcTraceOff', 'fa-stop', 'Trace off') +
@@ -3316,6 +3331,45 @@ $(function () {
         setTimeout(function () { renderControlTab(bcGuid); }, 400);
     });
     $(document).on('click', '#bcAutoForm', function () { $('#autoFormGroups').click(); });
+
+    // Gear up — single bot. Reads level / mount_item / riding inputs, posts to
+    // /Bots/GearUp, and updates the bcGearUpState span so the operator sees the
+    // in-flight request. The C# side mirrors the bridge handler:
+    //   level defaults to 60; mount_item=0 = skip; riding=true teaches 33388+33391.
+    function bcApplyGearUp(scopeLabel) {
+        var targets = bcTargets();
+        if (!targets.length) { showToast('No target bots', true); return; }
+        var lvl  = parseInt($('#bcGearLvl').val(), 10)   || 60;
+        var item = parseInt($('#bcGearMount').val(), 10) || 0;
+        var ride = $('#bcGearRiding').is(':checked');
+        var state = $('#bcGearUpState');
+        state.html('<i class="fa-solid fa-spinner fa-spin"></i> sending GEAR_UP (lvl ' + lvl + ', mount ' + item + ', riding ' + (ride ? 'yes' : 'no') + ') → ' + scopeLabel);
+        var done = 0, failed = 0, firstErr = null;
+        targets.forEach(function (g) {
+            $.ajax({
+                url: '/Bots/GearUp', type: 'POST', contentType: 'application/json',
+                data: JSON.stringify({ guid: g, level: lvl, mountItem: item, riding: ride })
+            })
+            .done(function (r) {
+                if (r && r.success === false) { failed++; if (!firstErr) firstErr = r.error; }
+                else done++;
+            })
+            .fail(function (x) { failed++; if (!firstErr) firstErr = 'HTTP ' + x.status; })
+            .always(function () {
+                if (done + failed !== targets.length) return;
+                if (failed) {
+                    state.html('<span style="color:#f7768e;">' + done + ' ok, ' + failed + ' failed' + (firstErr ? ' (' + esc(firstErr) + ')' : '') + '</span>');
+                    showToast('GEAR_UP — ' + done + ' ok, ' + failed + ' failed', true);
+                } else {
+                    state.html('<span style="color:#9ece6a;">' + done + ' ok</span>');
+                    showToast('GEAR_UP \u2192 ' + (targets.length === 1 ? bcTargetLabel() : targets.length + ' bots'));
+                }
+            });
+        });
+    }
+
+    $(document).on('click', '#bcGearUp',    function () { bcApplyGearUp(bcTargetLabel()); });
+    $(document).on('click', '#bcGearUpAll', function () { bcApplyGearUp('all connected bots'); });
 
     function bcDiag(url, enabled, verb) {
         var targets = bcTargets();

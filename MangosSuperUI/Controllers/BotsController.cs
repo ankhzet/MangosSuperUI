@@ -300,6 +300,13 @@ public partial class BotsController : Controller
         return Json(new { success = true, command = "TAKE_FLIGHT", req.Guid });
     }
 
+    [HttpPost]
+    public async Task<IActionResult> GearUp([FromBody] GearUpRequest req)
+    {
+        await _bridge.SendGearUpAsync(req.Guid, req.Level, req.MountItem, req.Riding);
+        return Json(new { success = true, command = "GEAR_UP", req.Guid, level = req.Level });
+    }
+
     // ==================== BotBrain API ====================
 
     [HttpPost]
@@ -1016,6 +1023,14 @@ public class SetTaskGrindRequest
     public float Radius { get; set; } = 60f;
     public int CreatureEntry { get; set; }
     public int KillCount { get; set; }
+}
+
+public class GearUpRequest
+{
+    public int Guid { get; set; }
+    public int Level { get; set; } = 60;
+    public int MountItem { get; set; } = 0;
+    public bool Riding { get; set; } = true;
 }
 
 // Session 31 — Grouping DTOs
