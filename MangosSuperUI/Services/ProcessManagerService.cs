@@ -25,16 +25,16 @@ public class ProcessManagerService
     public ProcessStatus GetMangosdStatus() => GetProcessStatus("mangosd", Settings.MangosdProcess);
     public ProcessStatus GetRealmdStatus() => GetProcessStatus("realmd", Settings.RealmdProcess);
 
-    public async Task<string> StartMangosdAsync() => await RunSystemctlAsync("start", "mangosd");
-    public async Task<string> StopMangosdAsync() => await RunSystemctlAsync("stop", "mangosd");
-    public async Task<string> RestartMangosdAsync() => await RunSystemctlAsync("restart", "mangosd");
+    public Task<string> StartMangosdAsync()   => RunActionAsync("start",   "mangosd", Settings.MangosdStartCommand);
+    public Task<string> StopMangosdAsync()    => RunActionAsync("stop",    "mangosd", Settings.MangosdStopCommand);
+    public Task<string> RestartMangosdAsync() => RunActionAsync("restart", "mangosd", Settings.MangosdRestartCommand);
 
-    public async Task<string> StartRealmdAsync() => await RunSystemctlAsync("start", "realmd");
-    public async Task<string> StopRealmdAsync() => await RunSystemctlAsync("stop", "realmd");
-    public async Task<string> RestartRealmdAsync() => await RunSystemctlAsync("restart", "realmd");
+    public Task<string> StartRealmdAsync()   => RunActionAsync("start",   "realmd", Settings.RealmdStartCommand);
+    public Task<string> StopRealmdAsync()    => RunActionAsync("stop",    "realmd", Settings.RealmdStopCommand);
+    public Task<string> RestartRealmdAsync() => RunActionAsync("restart", "realmd", Settings.RealmdRestartCommand);
 
     /// <summary>
-    /// Returns diagnostics about process detection — what name was configured,
+    /// Returns diagnostics about process detection ï¿½ what name was configured,
     /// what was actually found, and how it was resolved.
     /// </summary>
     public ProcessDiagnostics GetDiagnostics()
@@ -78,42 +78,115 @@ public class ProcessManagerService
         return diag;
     }
 
-    private async Task<string> RunSystemctlAsync(string action, string unit)
+    /// <summary>
+    /// Executes the configured command for an action on a unit. The template
+    /// supports two placeholders:
+    ///   {unit}    â†’ the process name (MangosdProcess / RealmdProcess)
+    ///   {action}  â†’ start | stop | restart
+    ///
+    /// If the configured command is empty, falls back to signalling the
+    /// process directly via Process.Kill() - the right behaviour when the
+    /// UI runs in the same PID namespace as the world server (which is
+    /// how the docker-compose stack wires it via pid: "service:mangosd").
+    ///
+    /// Throws with a helpful, action-specific message when the command
+    /// is unconfigured AND the process isn't visible (so the UI can say
+    /// "configure a command in Settings or start the service via systemd").
+    /// </summary>
+    private async Task<string> RunActionAsync(string action, string unit, string? commandTemplate)
     {
-        _logger.LogInformation("Running systemctl {Action} {Unit}", action, unit);
+        // Resolve the actual unit name (process name from settings) for placeholders.
+        var unitName = unit == "mangosd" ? Settings.MangosdProcess : Settings.RealmdProcess;
 
+        // --- Fallback: no command configured. Try to signal the process directly. ---
+        if (string.IsNullOrWhiteSpace(commandTemplate))
+        {
+            var proc = FindProcessByName(unitName);
+            switch (action)
+            {
+                case "stop":
+                    if (proc == null)
+                        return $"{unitName} is not running.";
+                    proc.Kill(entireProcessTree: false);
+                    _logger.LogInformation("Killed {Unit} (pid {Pid}) - no command configured", unitName, proc.Id);
+                    return $"Stopped {unitName} (pid {proc.Id}) via Process.Kill (no command configured).";
+
+                case "start":
+                    return $"No start command configured for {unitName}. " +
+                           "Either set Vmangos:MangosdStartCommand (or :RealmdStartCommand) in Settings, " +
+                           "or start the service via your init system (e.g. `docker compose up -d`).";
+
+                case "restart":
+                    if (proc != null) proc.Kill(entireProcessTree: false);
+                    return $"No restart command configured for {unitName}. " +
+                           "Either set Vmangos:MangosdRestartCommand in Settings, " +
+                           "or restart the container (e.g. `docker compose restart mangosd`).";
+            }
+            return string.Empty;
+        }
+
+        // --- Configured: run the command via shell, substituting placeholders. ---
+        var cmd = commandTemplate
+            .Replace("{unit}",   unitName)
+            .Replace("{action}", action);
+
+        _logger.LogInformation("Running: {Command}", cmd);
+
+        // Run through the shell so pipes/redirects/quotes work (matches
+        // operator muscle memory - "sudo systemctl ..." just works).
         var psi = new ProcessStartInfo
         {
-            FileName = "sudo",
-            Arguments = $"systemctl {action} {unit}",
+            FileName               = "/bin/sh",
+            Arguments              = $"-c \"{cmd.Replace("\"", "\\\"")}\"",
             RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
+            RedirectStandardError  = true,
+            UseShellExecute        = false,
+            CreateNoWindow         = true,
+            WorkingDirectory       = Settings.BinDirectory
         };
 
-        using var proc = Process.Start(psi);
-        if (proc == null)
-            throw new InvalidOperationException($"Failed to start systemctl {action} {unit}");
+        using var proc2 = Process.Start(psi);
+        if (proc2 == null)
+            throw new InvalidOperationException(
+                $"Failed to start /bin/sh to run the {action} command for {unitName}. " +
+                $"Command was: {cmd}");
 
-        var stdout = await proc.StandardOutput.ReadToEndAsync();
-        var stderr = await proc.StandardError.ReadToEndAsync();
-        await proc.WaitForExitAsync();
+        var stdout = await proc2.StandardOutput.ReadToEndAsync();
+        var stderr = await proc2.StandardError.ReadToEndAsync();
+        await proc2.WaitForExitAsync();
 
-        if (proc.ExitCode != 0)
+        if (proc2.ExitCode != 0)
         {
-            _logger.LogError("systemctl {Action} {Unit} failed (exit {Code}): {Error}", action, unit, proc.ExitCode, stderr);
-            throw new InvalidOperationException($"systemctl {action} {unit} failed: {stderr.Trim()}");
+            _logger.LogError("{Action} {Unit} failed (exit {Code}): {Error}",
+                action, unitName, proc2.ExitCode, stderr);
+            throw new InvalidOperationException(
+                $"{action} {unitName} failed (exit {proc2.ExitCode}): {stderr.Trim()}");
         }
 
-        // Invalidate cached process names after start/restart so next poll re-scans
+        // Invalidate cached process names after start/restart so next poll re-scans.
         if (action is "start" or "restart")
-        {
             _lastResolveScan = DateTime.MinValue;
-        }
 
-        _logger.LogInformation("systemctl {Action} {Unit} succeeded", action, unit);
-        return stdout.Trim();
+        _logger.LogInformation("{Action} {Unit} succeeded", action, unitName);
+        return string.IsNullOrWhiteSpace(stdout) ? $"{action} {unitName} OK" : stdout.Trim();
+    }
+
+    /// <summary>
+    /// Best-effort lookup by configured process name; returns null if not found.
+    /// Reuses the same strategy as GetProcessStatus strategy 1 so the names
+    /// stay consistent (process actually running, not just any name match).
+    /// </summary>
+    private static Process? FindProcessByName(string processName)
+    {
+        try
+        {
+            var matches = Process.GetProcessesByName(processName);
+            return matches.Length > 0 ? matches[0] : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -170,7 +243,7 @@ public class ProcessManagerService
             catch { }
         }
 
-        // Strategy 3: Scan /proc (expensive — throttled to once per ResolveCacheDuration)
+        // Strategy 3: Scan /proc (expensive ï¿½ throttled to once per ResolveCacheDuration)
         if (DateTime.UtcNow - _lastResolveScan > ResolveCacheDuration)
         {
             var found = ScanProcForProcess(keyword);

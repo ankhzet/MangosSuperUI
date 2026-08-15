@@ -142,6 +142,47 @@
                             </label>
                             <input type="text" class="form-input cfg-input" id="cfgRealmdProcess" placeholder="realmd" />
                         </div>
+                    </div>
+                    <div class="row g-3 mt-1">
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">
+                                Start / Stop / Restart Commands
+                                <i class="fa-solid fa-circle-question cfg-hint"
+                                   title="Shell commands used to control each service. Runs through /bin/sh -c, so pipes/redirection work. Placeholders: {unit} = process name above, {action} = start | stop | restart. Blank = fall back to Process.Kill() on the process (works when the UI runs in the same PID namespace as the world server, e.g. docker-compose with pid: 'service:mangosd'). On a systemd host, the default values use 'sudo systemctl ...'."></i>
+                            </label>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="cmd-label">mangosd &mdash; Start <span class="text-muted small">(placeholder {unit} = mangosd process name)</span></label>
+                            <input type="text" class="form-input cfg-input" id="cfgMangosdStartCommand"
+                                   placeholder="sudo systemctl start {unit}" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="cmd-label">mangosd &mdash; Stop</label>
+                            <input type="text" class="form-input cfg-input" id="cfgMangosdStopCommand"
+                                   placeholder="sudo systemctl stop {unit}" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="cmd-label">mangosd &mdash; Restart</label>
+                            <input type="text" class="form-input cfg-input" id="cfgMangosdRestartCommand"
+                                   placeholder="sudo systemctl restart {unit}" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="cmd-label">realmd &mdash; Start</label>
+                            <input type="text" class="form-input cfg-input" id="cfgRealmdStartCommand"
+                                   placeholder="sudo systemctl start {unit}" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="cmd-label">realmd &mdash; Stop</label>
+                            <input type="text" class="form-input cfg-input" id="cfgRealmdStopCommand"
+                                   placeholder="sudo systemctl stop {unit}" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="cmd-label">realmd &mdash; Restart</label>
+                            <input type="text" class="form-input cfg-input" id="cfgRealmdRestartCommand"
+                                   placeholder="sudo systemctl restart {unit}" />
+                        </div>
+                    </div>
+                    <div class="row g-3">
                         <div class="col-md-6">
                             <label class="cmd-label">
                                 mangosd.conf Path

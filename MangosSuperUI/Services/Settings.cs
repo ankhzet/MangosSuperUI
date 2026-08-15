@@ -14,6 +14,21 @@ public class VmangosSettings
     public string BackupDirectory { get; set; } = "/home/wowvmangos/backups";
     public string VmangosSourcePath { get; set; } = "/home/wowvmangos/vmangos/src";
     public string VmangosSqlPath { get; set; } = "/home/wowvmangos/vmangos/sql";
+
+    // Commands used by ProcessManagerService to control the world/auth
+    // servers. Default is the classic systemd-via-sudo invocation; in a
+    // container/Docker setup leave them blank and the service falls back
+    // to signaling the process directly via Process.Kill (UI shares the
+    // mangosd container's PID namespace via pid: "service:mangosd").
+    //
+    // {unit} is replaced with the value of MangosdProcess / RealmdProcess.
+    // {action} is replaced with start | stop | restart.
+    public string MangosdStartCommand   { get; set; } = "sudo systemctl start {unit}";
+    public string MangosdStopCommand    { get; set; } = "sudo systemctl stop {unit}";
+    public string MangosdRestartCommand { get; set; } = "sudo systemctl restart {unit}";
+    public string RealmdStartCommand   { get; set; } = "sudo systemctl start {unit}";
+    public string RealmdStopCommand    { get; set; } = "sudo systemctl stop {unit}";
+    public string RealmdRestartCommand { get; set; } = "sudo systemctl restart {unit}";
 }
 
 public class RemoteAccessSettings

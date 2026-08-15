@@ -77,7 +77,13 @@ public class SettingsController : Controller
                 ExtractorsPath = _config["Vmangos:ExtractorsPath"] ?? "",
                 ServerDataPath = _config["Vmangos:ServerDataPath"] ?? "",
                 ClientDataPath = _config["Vmangos:ClientDataPath"] ?? "",
-                VmapsDataPath = _config["Vmangos:VmapsDataPath"] ?? ""
+                VmapsDataPath = _config["Vmangos:VmapsDataPath"] ?? "",
+                MangosdStartCommand   = _config["Vmangos:MangosdStartCommand"]   ?? "",
+                MangosdStopCommand    = _config["Vmangos:MangosdStopCommand"]    ?? "",
+                MangosdRestartCommand = _config["Vmangos:MangosdRestartCommand"] ?? "",
+                RealmdStartCommand   = _config["Vmangos:RealmdStartCommand"]   ?? "",
+                RealmdStopCommand    = _config["Vmangos:RealmdStopCommand"]    ?? "",
+                RealmdRestartCommand = _config["Vmangos:RealmdRestartCommand"] ?? ""
             },
             SpellCreator = BuildSpellCreatorConfig(),
             Wiki = new WikiConfig
@@ -320,6 +326,21 @@ public class VmangosConfig
     // extracted vmaps). Blank → falls back to ServerDataPath/vmaps. See
     // WorldEditorController.GetVmapsDirectory.
     public string VmapsDataPath { get; set; } = "";
+
+    // Commands run by ProcessManagerService for start/stop/restart on each
+    // service. Blank → the service signals the process directly via
+    // Process.Kill() (works when the UI shares the mangosd container's
+    // PID namespace, i.e. the docker-compose default).
+    //
+    // Placeholders:
+    //   {unit}    → MangosdProcess / RealmdProcess
+    //   {action}  → start | stop | restart
+    public string MangosdStartCommand   { get; set; } = "";
+    public string MangosdStopCommand    { get; set; } = "";
+    public string MangosdRestartCommand { get; set; } = "";
+    public string RealmdStartCommand   { get; set; } = "";
+    public string RealmdStopCommand    { get; set; } = "";
+    public string RealmdRestartCommand { get; set; } = "";
 }
 
 public class SpellCreatorConfig

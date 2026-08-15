@@ -29,6 +29,13 @@ $(function () {
             $('#cfgRealmdProcess').val(s.vmangos.realmdProcess);
             $('#cfgMangosdConfPath').val(s.vmangos.mangosdConfPath);
             $('#cfgLogsDir').val(s.vmangos.logsDir);
+            // Start/Stop/Restart command templates
+            $('#cfgMangosdStartCommand').val(s.vmangos.mangosdStartCommand   || '');
+            $('#cfgMangosdStopCommand').val(s.vmangos.mangosdStopCommand     || '');
+            $('#cfgMangosdRestartCommand').val(s.vmangos.mangosdRestartCommand || '');
+            $('#cfgRealmdStartCommand').val(s.vmangos.realmdStartCommand   || '');
+            $('#cfgRealmdStopCommand').val(s.vmangos.realmdStopCommand     || '');
+            $('#cfgRealmdRestartCommand').val(s.vmangos.realmdRestartCommand || '');
 
             // DBC
             $('#cfgDbcPath').val(s.vmangos.dbcPath);
@@ -458,6 +465,15 @@ $(function () {
                 mangosdConfPath: $('#cfgMangosdConfPath').val() || '',
                 logsDir: $('#cfgLogsDir').val() || '',
                 dbcPath: $('#cfgDbcPath').val() || '',
+                // Start/Stop/Restart commands - blank means "use the
+                // service-side fallback" (Process.Kill for stop, helpful
+                // hint for start/restart).
+                mangosdStartCommand:   $('#cfgMangosdStartCommand').val()   || '',
+                mangosdStopCommand:    $('#cfgMangosdStopCommand').val()    || '',
+                mangosdRestartCommand: $('#cfgMangosdRestartCommand').val() || '',
+                realmdStartCommand:   $('#cfgRealmdStartCommand').val()   || '',
+                realmdStopCommand:    $('#cfgRealmdStopCommand').val()    || '',
+                realmdRestartCommand: $('#cfgRealmdRestartCommand').val() || '',
                 mapsDataPath: $('#cfgMapsDataPath').val() || '',
                 backupDirectory: $('#cfgBackupDir').val() || '',
                 vmangosSourcePath: $('#cfgSourcePath').val() || '',
