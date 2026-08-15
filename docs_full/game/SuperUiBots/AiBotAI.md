@@ -182,3 +182,22 @@ No static world tables (`mangos` DB) are directly queried by `AiBotAI`; it relie
 
 *`?` = nullable, `PK` = primary key column.*
 
+---
+
+## MCP integration
+
+The bot bridge TCP protocol documented above (`AiBotAI.Bridge`) is also
+exposed to LLM agents through MSUI's MCP server. See
+[`../../admin/MCP.md`](../../admin/MCP.md) for the high-level overview.
+The relevant tool class is
+[`MSUI/Mcp/Tools/BotTools.cs`](../../../../MangosSuperUI/Mcp/Tools/BotTools.cs)
+— 25 tools in total covering reads (`bot_list`, `bot_state`,
+`bot_fleet_state`, `bot_brain_state`, `bot_brain_status`, `bot_live_state`,
+`bot_fleet_report`, `bot_diag`) and commands (`bot_spawn`, `bot_move_to`,
+`bot_say_text`, `bot_accept_quest`, `bot_complete_quest`,
+`bot_abandon_quest`, `bot_learn_spell`, `bot_attack_target`,
+`bot_interact_npc`, `bot_take_flight`, `bot_set_task_grind`,
+`bot_set_task_idle`, `bot_gear_up`, `bot_toggle_brain`, `bot_form_group`,
+`bot_disband_group`, `bot_auto_form_groups`, `bot_set_grouping_mode`).
+All require the `bots` capability on the bearer token.
+

@@ -127,6 +127,33 @@ Sends a message to the client and immediately prepares to receive the next input
 
 ---
 
+## MCP integration
+
+The RemoteAdmin protocol documented above is also exposed to LLM agents
+through MSUI's MCP server. See [`../../admin/MCP.md`](../../admin/MCP.md)
+for the high-level overview and
+[`../../admin/MCP_Architecture.md`](../../admin/MCP_Architecture.md) for
+the request lifecycle (the C# `RaService` opens a TCP connection to
+this RASocket and sends text commands; `Mcp/RaTools.cs` wraps every
+command in `AuditService.ExecuteAndLogAsync` so the audit log captures
+the before-state — e.g. the target character's level + mute time before
+`.mute <name> <minutes> <reason>` runs).
+
+Relevant MCP tools (all require the `ra` capability):
+
+* `ra_send_command` — raw text command (audit-logged).
+* `ra_server_info` / `ra_list_online` — read-only queries.
+* `ra_kick_player` / `ra_announce` / `ra_save_all` / `ra_shutdown` / `ra_connection_status` — session-level actions.
+* `ra_ban_account` / `ra_unban_account` — account-level actions.
+* `player_revive` / `player_reset_talents` / `player_reset_spells` /
+  `player_reset_all` / `player_mute` / `player_unmute` / `player_teleport` /
+  `player_gps` — per-character actions routed through RA.
+* `config_reload_mangosd` — sends `.reload config`.
+
+See [`../../admin/MCP_WireProtocol.md`](../../admin/MCP_WireProtocol.md) for
+the byte-level framing.
+
+
 <!-- machine-true, projected from graph.json -->
 
 ## Map — RASocket
