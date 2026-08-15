@@ -1147,10 +1147,12 @@ public class BotBridgeService : BackgroundService
     /// One-shot prep: level to target, learn premade spec (class spells + talents),
     /// auto-equip, max skills, teach riding (Apprentice 33388 + Journeyman 33391 at 60+),
     /// optional mount item. Wire shape mirrors the C++ handler in AiBotAIBridge.cpp:
-    ///   {"type":"GEAR_UP","payload":{"level":60,"mount_item":0,"riding":true}}
-    /// All fields default (level=60, mount_item=0=skip, riding=true).
+    ///   {"type":"GEAR_UP","payload":{"level":60,"mount_item":0,"riding":1}}
+    /// riding is sent as int 0/1 because the C++ bridge handler parses via atoi
+    /// (a JSON bool would always come through as 0). All fields default
+    /// (level=60, mount_item=8630 default = Black War Tiger, riding=1=teach).
     /// </summary>
-    public Task SendGearUpAsync(int guid, int level = 60, int mountItem = 0, bool riding = true)
+    public Task SendGearUpAsync(int guid, int level = 60, int mountItem = 8630, int riding = 1)
     {
         return SendToBotAsync(guid, "GEAR_UP", new
         {
@@ -1165,7 +1167,7 @@ public class BotBridgeService : BackgroundService
     /// only hits bots currently connected to the bridge). For bots not yet in
     /// the bridge (just-spawned, awaiting HELLO), wait a beat before calling.
     /// </summary>
-    public async Task SendGearUpToAllAsync(int level = 60, int mountItem = 0, bool riding = true)
+    public async Task SendGearUpToAllAsync(int level = 60, int mountItem = 8630, int riding = 1)
     {
         await SendToAllBotsAsync("GEAR_UP", new
         {

@@ -3190,10 +3190,11 @@ $(function () {
         // One-shot prep: level to target, learn premade spec (class spells + talents),
         // auto-equip, max skills, teach riding (Apprentice 33388 + Journeyman 33391 at 60+),
         // optional mount item via AddItemToInventory. Same call the bridge C++ side
-        // implements (AiBotAIBridge.cpp::BridgeHandleGearUp).
+        // implements (AiBotAIBridge.cpp::BridgeHandleGearUp). Default mount = 8630
+        // (Reins of the Black War Tiger, hoo epic PvP mount). mount_item=0 = skip.
         var gu = '<div class="bc-row">' +
             bcNum('bcGearLvl', 'level', 60, 78) +
-            bcNum('bcGearMount', 'mount item', 0, 100) +
+            bcNum('bcGearMount', 'mount item', 8630, 100) +
             '<label class="bc-radio" style="margin-left:8px;"><input type="checkbox" id="bcGearRiding" checked> riding</label>' +
             '</div><div class="bc-row">' +
             bcBtn('bcGearUp', 'fa-shield-halved', 'Gear up', 'primary') +
@@ -3335,13 +3336,15 @@ $(function () {
     // Gear up — single bot. Reads level / mount_item / riding inputs, posts to
     // /Bots/GearUp, and updates the bcGearUpState span so the operator sees the
     // in-flight request. The C# side mirrors the bridge handler:
-    //   level defaults to 60; mount_item=0 = skip; riding=true teaches 33388+33391.
+    //   level defaults to 60; mount_item=0 = skip; riding=1 teaches 33388+33391.
+    //   riding is sent as int 0/1 because the C++ bridge handler parses via
+    //   atoi (a JSON bool would always come through as 0).
     function bcApplyGearUp(scopeLabel) {
         var targets = bcTargets();
         if (!targets.length) { showToast('No target bots', true); return; }
         var lvl  = parseInt($('#bcGearLvl').val(), 10)   || 60;
         var item = parseInt($('#bcGearMount').val(), 10) || 0;
-        var ride = $('#bcGearRiding').is(':checked');
+        var ride = $('#bcGearRiding').is(':checked') ? 1 : 0;
         var state = $('#bcGearUpState');
         state.html('<i class="fa-solid fa-spinner fa-spin"></i> sending GEAR_UP (lvl ' + lvl + ', mount ' + item + ', riding ' + (ride ? 'yes' : 'no') + ') → ' + scopeLabel);
         var done = 0, failed = 0, firstErr = null;

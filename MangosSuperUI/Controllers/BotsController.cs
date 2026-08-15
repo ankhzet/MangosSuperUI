@@ -303,6 +303,7 @@ public partial class BotsController : Controller
     [HttpPost]
     public async Task<IActionResult> GearUp([FromBody] GearUpRequest req)
     {
+        if (req == null) return Json(new { success = false, error = "missing request body" });
         await _bridge.SendGearUpAsync(req.Guid, req.Level, req.MountItem, req.Riding);
         return Json(new { success = true, command = "GEAR_UP", req.Guid, level = req.Level });
     }
@@ -1030,7 +1031,9 @@ public class GearUpRequest
     public int Guid { get; set; }
     public int Level { get; set; } = 60;
     public int MountItem { get; set; } = 0;
-    public bool Riding { get; set; } = true;
+    // Default: 8630 = "Reins of the Black War Tiger" (epic PvP mount, hoo). 0 = skip.
+    // Sent as int 0/1 because the C++ bridge handler reads via atoi (bool atoi would 0).
+    public int Riding { get; set; } = 1;
 }
 
 // Session 31 — Grouping DTOs
