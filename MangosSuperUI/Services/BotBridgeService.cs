@@ -386,6 +386,7 @@ public class BotConnection
 ///   MOVE_TO     — walk to coordinates
 ///   SAY_TEXT    — say/yell/whisper text
 ///   SET_TASK    — assign a persistent task (GRIND, IDLE)
+///   GEAR_UP     — one-shot prep (level, spells, gear, skills, riding, optional mount item)
 ///   PING        — keepalive
 /// </summary>
 public class BotBridgeService : BackgroundService
@@ -1139,6 +1140,38 @@ public class BotBridgeService : BackgroundService
         {
             npc_entry = npcEntry,
             keep_quality = keepQuality
+        });
+    }
+
+    /// <summary>
+    /// One-shot prep: level to target, learn premade spec (class spells + talents),
+    /// auto-equip, max skills, teach riding (Apprentice 33388 + Journeyman 33391 at 60+),
+    /// optional mount item. Wire shape mirrors the C++ handler in AiBotAIBridge.cpp:
+    ///   {"type":"GEAR_UP","payload":{"level":60,"mount_item":0,"riding":true}}
+    /// All fields default (level=60, mount_item=0=skip, riding=true).
+    /// </summary>
+    public Task SendGearUpAsync(int guid, int level = 60, int mountItem = 0, bool riding = true)
+    {
+        return SendToBotAsync(guid, "GEAR_UP", new
+        {
+            level = level,
+            mount_item = mountItem,
+            riding = riding
+        });
+    }
+
+    /// <summary>
+    /// Convenience: gear up every connected bot (uses SendToAllBotsAsync, which
+    /// only hits bots currently connected to the bridge). For bots not yet in
+    /// the bridge (just-spawned, awaiting HELLO), wait a beat before calling.
+    /// </summary>
+    public async Task SendGearUpToAllAsync(int level = 60, int mountItem = 0, bool riding = true)
+    {
+        await SendToAllBotsAsync("GEAR_UP", new
+        {
+            level = level,
+            mount_item = mountItem,
+            riding = riding
         });
     }
 
