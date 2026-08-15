@@ -11,9 +11,15 @@ using MangosSuperUI.BotLogic.Data;
 using MangosSuperUI.BotLogic.Planners;
 using MangosSuperUI.BotLogic.Tracking;
 using MangosSuperUI.Hubs;
+using MangosSuperUI.Mcp.Auth;
+using MangosSuperUI.Mcp.Options;
+using MangosSuperUI.Mcp.Prompts;
+using MangosSuperUI.Mcp.Resources;
+using MangosSuperUI.Mcp.Tools;
 using MangosSuperUI.Models;
 using MangosSuperUI.Services;
 using Microsoft.AspNetCore.StaticFiles;
+using ModelContextProtocol.AspNetCore;
 using System.Diagnostics.Metrics;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -33,6 +39,7 @@ builder.Configuration.AddJsonFile("server-config.json", optional: true, reloadOn
 builder.Services.Configure<VmangosSettings>(builder.Configuration.GetSection("Vmangos"));
 builder.Services.Configure<RemoteAccessSettings>(builder.Configuration.GetSection("RemoteAccess"));
 builder.Services.Configure<BotChatSettings>(builder.Configuration.GetSection("BotChat"));
+builder.Services.Configure<McpOptions>(builder.Configuration.GetSection(McpOptions.SectionName));
 
 // ---------- Data ----------
 builder.Services.AddSingleton<ConnectionFactory>();
@@ -157,6 +164,60 @@ builder.Services.AddSingleton<ChatHealthService>();
 // ---------- MVC + SignalR ----------
 builder.Services.AddControllersWithViews();
 builder.Services.AddSignalR();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddMcpCallContext();
+
+// ---------- MCP (Model Context Protocol) server ----------
+// Stateless Streamable HTTP transport on the existing UI port at /mcp.
+// Bearer-token auth is enforced by McpBearerAuthMiddleware BEFORE MapMcp so
+// unauthenticated clients never see the tool catalogue. The MCP-Protocol-Version
+// header negotiation happens inside the SDK; we just host the endpoint.
+builder.Services.AddSingleton(sp => McpToolCapabilityRegistry.FromAssemblyScans(
+    new[] { typeof(RaTools).Assembly },
+    sp.GetRequiredService<ILogger<McpToolCapabilityRegistry>>()));
+
+builder.Services.AddMcpServer()
+    .WithHttpTransport(options =>
+    {
+        options.Stateless = true;
+    })
+    .WithTools<RaTools>()
+    .WithTools<PlayerTools>()
+    .WithTools<ProcessTools>()
+    .WithTools<AuditTools>()
+    .WithTools<HomeTools>()
+    .WithTools<DbcTools>()
+    .WithTools<ServerLogTools>()
+    .WithTools<ItemTools>()
+    .WithTools<GameObjectTools>()
+    .WithTools<WorldTools>()
+    .WithTools<QuestTools>()
+    .WithTools<WorldMapTools>()
+    .WithTools<WikiTools>()
+    .WithTools<SourceTools>()
+    .WithTools<AccountWriteTools>()
+    .WithTools<InstanceWriteTools>()
+    .WithTools<GameObjectWriteTools>()
+    .WithTools<ItemWriteTools>()
+    .WithTools<ConfigTools>()
+    .WithTools<PlayerWriteTools>()
+    .WithTools<SpellWriteTools>()
+    .WithTools<WorldsTools>()
+    .WithTools<BaselineTools>()
+    .WithTools<DivergenceTools>()
+    .WithTools<ChangeGraphTools>()
+    .WithTools<ActivityTools>()
+    .WithTools<BotTools>()
+    .WithTools<RotationTools>()
+    .WithTools<PatchTools>()
+    .WithTools<LootifierTools>()
+    .WithResources<ServerHealthResource>()
+    .WithResources<PlayerSnapshotResource>()
+    .WithResources<BotFleetResource>()
+    .WithPrompts<InvestigatePlayerPrompt>()
+    .WithPrompts<RestartServerPrompt>()
+    .WithPrompts<TriageGriefingPrompt>()
+    .WithPrompts<ReviewChangesPrompt>();
 
 var app = builder.Build();
 
@@ -243,5 +304,12 @@ app.MapControllerRoute(
 app.MapHub<ConsoleHub>("/hubs/console");
 app.MapHub<LogStreamHub>("/hubs/logs");
 app.MapHub<BotBridgeHub>("/hubs/botbridge");
+
+// ---------- MCP endpoint ----------
+// Bearer-token middleware runs first; only requests with a valid MCP_AUTH_TOKEN
+// reach MapMcp. The route is configured in appsettings.json under "Mcp:Route"
+// (default /mcp). Stateless mode means no Mcp-Session-Id is issued.
+app.UseMiddleware<McpAuthMiddleware>();
+app.MapMcp("/mcp");
 
 app.Run();
