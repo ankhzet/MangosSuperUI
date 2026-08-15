@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using MangosSuperUI.Services;
 
 namespace MangosSuperUI.Mcp.Common;
 
@@ -29,7 +30,21 @@ public sealed class McpResult
     [JsonPropertyName("error")]
     public McpError? Error { get; init; }
 
-    public string ToJson() => JsonSerializer.Serialize(this, McpResultJsonContext.Default.McpResult);
+    public string ToJson()
+    {
+        // Happy path: source-gen serializer. Fast and zero-alloc.
+        try
+        {
+            return JsonSerializer.Serialize(this, McpResultJsonContext.Default.McpResult);
+        }
+        catch (NotSupportedException ex) when (ex.Message.Contains("JsonTypeInfo metadata", StringComparison.Ordinal))
+        {
+            // Fallback for payload types the source generator couldn't see
+            // (anonymous types, types declared in inline lambdas, etc.).
+            // Same wire format, just less performant.
+            return JsonSerializer.Serialize(this, McpResultJsonFallback.Options);
+        }
+    }
 
     public static McpResult Success(object? data) => new() { Ok = true, Data = data };
 
@@ -84,13 +99,39 @@ public static class ErrorCodes
 }
 
 /// <summary>
-/// AOT-friendly JSON serializer for <see cref="McpResult"/>. Falls back to
-/// the reflective serializer if the source generator can't see the payload
-/// type — payload types are arbitrary `object?` so this is the best we can
-/// do at compile time. The middle ground: keep the envelope itself in a
-/// source-generated context so the `ok`/`data`/`error` shape is locked.
+/// AOT-friendly JSON serializer for <see cref="McpResult"/>. The
+/// payload types we explicitly annotate here round-trip through the
+/// source-gen serializer. Anything else (anonymous types, runtime
+/// records, etc.) falls back to the reflective serializer via the
+/// resilient wrapper in <see cref="McpResult.ToJson"/>.
+///
+/// We don't need pure AOT here — Dapper uses heavy reflection throughout
+/// the codebase, so any AOT benefit would be theoretical. The source-gen
+/// context exists mostly to lock the envelope shape and speed up the
+/// happy path for the Wiki types that are returned via object.
 /// </summary>
 [JsonSerializable(typeof(McpResult))]
 [JsonSerializable(typeof(McpError))]
 [JsonSerializable(typeof(Dictionary<string, object>))]
+[JsonSerializable(typeof(WikiSearchResponse))]
+[JsonSerializable(typeof(WikiSearchHit))]
+[JsonSerializable(typeof(WikiStats))]
+[JsonSerializable(typeof(WikiTree))]
+[JsonSerializable(typeof(WikiPage))]
+[JsonSerializable(typeof(WikiNode))]
+[JsonSerializable(typeof(Tools.WikiTools.WikiStatsPayload))]
 public partial class McpResultJsonContext : JsonSerializerContext { }
+
+/// <summary>
+/// Reflection-only options used as a fallback when the source-gen context
+/// can't resolve a payload type (e.g. anonymous types from inline
+/// `new { ... }` returns). Identical settings to the source-gen context
+/// so wire format stays consistent.
+/// </summary>
+file static class McpResultJsonFallback
+{
+    public static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+}

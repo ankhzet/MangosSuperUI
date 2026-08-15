@@ -91,12 +91,10 @@ public class WikiTools
     [McpServerTool(Name = "wiki_stats")]
     [Description(
         "Corpus summary: page count, total bytes, root path, root-exists flag.")]
-    public string Stats() => McpResult.Success(new
-    {
-        rootExists = _store.RootExists,
-        root = _store.Root,
-        stats = _store.Stats()
-    }).ToJson();
+    public string Stats() => McpResult.Success(new WikiStatsPayload(
+        RootExists: _store.RootExists,
+        Root: _store.Root,
+        Stats: _store.Stats())).ToJson();
 
     [McpServerTool(Name = "wiki_index_status")]
     [Description(
@@ -121,4 +119,11 @@ public class WikiTools
             return McpResult.FromException(ex, ErrorCodes.Internal).ToJson();
         }
     }
+
+    /// <summary>
+    /// Concrete payload type for <c>wiki_stats</c> so the JsonSerializer
+    /// source-generator can resolve it (anonymous types break the
+    /// generator's metadata). Same shape as the original anonymous object.
+    /// </summary>
+    public sealed record WikiStatsPayload(bool RootExists, string Root, WikiStats Stats);
 }

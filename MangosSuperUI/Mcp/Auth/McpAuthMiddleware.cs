@@ -31,6 +31,15 @@ namespace MangosSuperUI.Mcp.Auth;
 /// </summary>
 public class McpAuthMiddleware
 {
+    /// <summary>
+    /// One-shot token generated at startup by <see cref="McpTokenBootstrap"/>
+    /// when bearer auth is required but no token is configured. Treated as
+    /// a superuser (granted every capability). Reset on every container
+    /// restart — operators who want a stable token should set
+    /// <c>MCP_AUTH_TOKEN</c> explicitly.
+    /// </summary>
+    public static string? GeneratedToken { get; set; }
+
     private readonly RequestDelegate _next;
     private readonly IOptionsMonitor<McpOptions> _options;
     private readonly McpToolCapabilityRegistry _registry;
@@ -74,7 +83,9 @@ public class McpAuthMiddleware
                 "MCP auth failure from {RemoteIp} for {Path}",
                 context.Connection.RemoteIpAddress, path);
             await Reject(context, StatusCodes.Status401Unauthorized,
-                "invalid_token", "Invalid or missing bearer token.");
+                "invalid_token",
+                "Invalid or missing bearer token. " +
+                "If no token is configured, one was auto-generated at startup — check the application logs.");
             return;
         }
 
@@ -201,6 +212,16 @@ public class McpAuthMiddleware
         if (!string.IsNullOrEmpty(legacy) && FixedTimeEquals(legacy, supplied))
         {
             return new Caller("legacy-" + auth.EnvVarName, McpCapability.All);
+        }
+
+        // Auto-generated fallback: a 256-bit superuser token created at
+        // startup by McpTokenBootstrap when auth is required but no other
+        // token is configured. Lets a fresh solo deployment be usable
+        // without forcing the operator to mint a token by hand.
+        var generated = GeneratedToken;
+        if (!string.IsNullOrEmpty(generated) && FixedTimeEquals(generated, supplied))
+        {
+            return new Caller("generated-superuser", McpCapability.All);
         }
 
         return null;

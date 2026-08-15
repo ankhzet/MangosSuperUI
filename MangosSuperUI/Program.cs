@@ -166,6 +166,7 @@ builder.Services.AddControllersWithViews();
 builder.Services.AddSignalR();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddMcpCallContext();
+builder.Services.AddHostedService<McpTokenBootstrap>();
 
 // ---------- MCP (Model Context Protocol) server ----------
 // Stateless Streamable HTTP transport on the existing UI port at /mcp.
@@ -311,5 +312,13 @@ app.MapHub<BotBridgeHub>("/hubs/botbridge");
 // (default /mcp). Stateless mode means no Mcp-Session-Id is issued.
 app.UseMiddleware<McpAuthMiddleware>();
 app.MapMcp("/mcp");
+
+// Log the MCP endpoint location once at startup so operators know where
+// to connect and can grep for the auto-generated token if applicable.
+var mcpLogger = app.Services.GetRequiredService<ILoggerFactory>()
+    .CreateLogger("MCP.Startup");
+mcpLogger.LogInformation(
+    "MCP server listening at /mcp (stateless Streamable HTTP). " +
+    "Capability matrix in docs/MCP.md.");
 
 app.Run();
